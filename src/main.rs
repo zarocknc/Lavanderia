@@ -1,11 +1,13 @@
 use std::env;
 
+use db::entidades::prelude::Clientes;
 use dotenv::dotenv;
+use poem::http::StatusCode;
 use poem::{listener::TcpListener, Result, Route, Server};
 use poem::error::InternalServerError;
 use poem_openapi::{Object, OpenApi, OpenApiService};
 use poem_openapi::payload::Json;
-use sea_orm::{Database, EntityTrait};
+use sea_orm::{ColumnTrait, Database, EntityTrait, QueryFilter};
 use serde::Deserialize;
 
 use crate::db::entidades::{pedidos, servicios};
@@ -17,7 +19,7 @@ struct Api;
 
 #[derive(Object, Deserialize)]
 struct PedidosRequest {
-    idCliente: u32,
+    id_cliente: i32,
 }
 
 #[OpenApi]
@@ -33,7 +35,20 @@ impl Api {
     /// Listar pedidos de cliente
     #[oai(path = "/pedidos", method = "post")]
     async fn pedidos(&self, request_body: Json<PedidosRequest>) -> Result<Json<Vec<pedidos::Model>>> {
-
+        let db_url = env::var("DATABASE_URL").expect("DBURL not set in .env file");
+        let db = Database::connect(db_url).await.expect("fallo al conectar db");
+        //let cliente = Clientes::find().filter(clientes::Column::Id.contains().one(&db).await.map_err(InternalServerError)?;
+        let cliente = Clientes::find_by_id(request_body.id_cliente).one(&db).await.map_err(InternalServerError)?;
+        match cliente {
+            Some(cliente) => {
+                //let pedidos = pedidos::Entity::find().filter(pedidos::Column::ClienteId.contains(cliente.id.t)).all(&db).await.map_err(InternalServerError)?;
+                let pedidos = pedidos::Entity::find().filter(pedidos::Column::ClienteId.eq(cliente.id)).all(&db).await.map_err(InternalServerError)?;
+                return Ok(Json(pedidos));
+            }
+            None => {
+                return Err(StatusCode::NOT_FOUND.into());
+            }
+        }
     }
 }
 
